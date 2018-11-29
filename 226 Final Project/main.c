@@ -31,6 +31,13 @@ void RTC_Init();
 int time_update = 0, alarm_update = 0;
 uint8_t hours, mins, secs;
 
+enum states {
+    SETTIME,
+    ALARM,
+    WAIT,
+    B
+            };
+
 static volatile uint16_t result; //vars used in temp reading
 float nADC;
 char line2[50];
@@ -46,8 +53,34 @@ void main(void)
     ADC14_init();
     PortADC_init();
 
+    enum states state= WAIT;
+
     while(1)
     {
+        while(1);
+                {
+                    switch(state)
+                {
+                case WAIT:
+
+                    break;
+
+                case ALARM:
+
+                    break;
+
+                case SETTIME:
+
+                     break;
+
+                case B:
+
+                     break;
+                default:
+                    state= WAIT;
+                }
+
+                }
 
     }
 
@@ -225,22 +258,22 @@ void readtemp()
 }
 //---------------------------------------------------------------------------------------------------
 void RTC_Init(){
-    //Initialize time to 2:45:55 pm
-//    RTC_C->TIM0 = 0x2D00;  //45 min, 0 secs
+    //Initialize time to 12:00:00 am
+
     RTC_C->CTL0 = (0xA500);
     RTC_C->CTL13 = 0;
 
-    RTC_C->TIM0 = 45<<8 | 55;//45 min, 55 secs
-    RTC_C->TIM1 = 1<<8 | 14;  //Monday, 2 pm
+    RTC_C->TIM0 = 0<<8 | ;//0 min, 0 secs
+    RTC_C->TIM1 = 0<<8 | 0;  //sunday, 12 am
     RTC_C->YEAR = 2018;
     //Alarm at 2:46 pm
     RTC_C->AMINHR = 14<<8 | 46 | BIT(15) | BIT(7);  //bit 15 and 7 are Alarm Enable bits
     RTC_C->ADOWDAY = 0;
-    RTC_C->PS1CTL = 0b00010;  //1/64 second interrupt
+    RTC_C->PS1CTL = 0b00010;  //1/64 second interrupt CHECK THIS
 
     RTC_C->CTL0 = (0xA500) | BIT5; //turn on interrupt
     RTC_C->CTL13 = 0;
-    //TODO
+
     NVIC_EnableIRQ(RTC_C_IRQn);
 }
 //---------------------------------------------------------------------------------------------------
