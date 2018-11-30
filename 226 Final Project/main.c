@@ -4,7 +4,7 @@
  * Professor: Zuidema
  * Final Project
  * Date: November, 2018
- *test
+ *
  *  */
 
 #include "msp.h"
@@ -18,10 +18,12 @@ void LCD_init(void);  //initializes the LCD
 void RTC_Init();
 void speakerinit(); //sets up timerA on 2.4 for the speaker
 void timerAinterrupt_init(); //for the wake up lights
+void displayinit(); //sets up the screen so we can update what we need
 
 void readtemp(); //function for reading the temp in F
 void readpwm(); //function for LDC pwm
 void timerA_lights();   //controls lights using timerA
+void updatetime(); //function to update the time to strings
 
 //Functions For LCD
 void systick_start(void); //prototype for initializing timer
@@ -37,6 +39,7 @@ void dataWrite(uint8_t data);   //will write one bit of data by calling pushByte
 
 int time_update = 0, alarm_update = 0;
 uint8_t hours, mins, secs;
+char hour_s[5], min_s[5], sec_s[5];
 
 enum states {
     SETTIME,
@@ -66,6 +69,7 @@ void main(void)
     LEDinit();
     timerAinterrupt_init(); //for the wake up lights
     speakerinit();
+    displayinit();
 
     __enable_interrupt();
 
@@ -199,7 +203,7 @@ void LCD_init(void)  //initializes the LCD
 
     write_command(8);
     delay_microsec(100);
-    write_command(0x0F);
+    write_command(0x0F); //change this to move cursor
     delay_microsec(100);
     write_command(1);
     delay_microsec(100);
@@ -280,6 +284,43 @@ void timerAinterrupt_init() //for the wake up lights
 
     NVIC_EnableIRQ(TA2_0_IRQn);
 
+}
+//---------------------------------------------------------------------------------------
+void displayinit()
+{
+    write_command(0b00000001); //reset display
+    char line1[]= "   12:00:00 AM";
+    char line2[]= "Alarm:";
+    char line3[]= "OFF      Temp:";
+    char line4[]= "00:00AM  00.0";
+
+
+   int i=0;
+   while(line1[i] != '\0')
+   {
+       if (line1[i] != '\0')
+           dataWrite(line1[i]);
+       i++;
+   }
+   write_command(0b11010000); //moves cursor to the second line fix
+   int i=0;
+   while(line1[i] != '\0')
+   {
+       if (line1[i] != '\0')
+           dataWrite(line1[i]);
+       i++;
+   }
+
+   write_command(0b11010000); //moves cursor to the fourth line
+   i=0;
+   while(line4[i] != '\0')
+   {
+       if (line4[i] != '\0')
+           dataWrite(line4[i]);
+       i++;
+   }
+   dataWrite(0b11011111); //degree symbol
+   dataWrite('F');
 }
 
 //--------------------------------------------------------------------------------------
@@ -406,7 +447,11 @@ void readpwm()
     sprintf(temperature, "%.1f", nADC);
 
 }
+//---------------------------------------------------------------------------------------------
+void updatetime() //gets the time into strings
+{
 
+}
 //-------------------------------------------------------------------------------------------------
 //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 //---------------------------------------------------------------------------------------------------
@@ -472,6 +517,7 @@ void PORT1_IRQHandler()
 
 }
 //--------------------------------------------------------------------------------------------
+//wake up lights
 void TA2_0_IRQHandler()
 {
     if (TIMER_A2->CTL & BIT0)
