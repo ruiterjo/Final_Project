@@ -83,8 +83,8 @@ void main(void)
                     switch(state)
                 {
                 case STANDBY:
-                    //sprintf(time,"%02d:%02d:%02d\n",hours,mins,secs);
-                  //  timedisplay();
+                    sprintf(time,"%02d:%02d:%02d\n",hours,mins,secs);
+                    timedisplay();
 
                     break;
 
