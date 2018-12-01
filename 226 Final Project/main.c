@@ -28,7 +28,7 @@ void timerA_lights();   //controls lights using timerA
 //Functions For LCD
 void systick_start(void); //prototype for initializing timer
 void delay_ms(unsigned); //function prototype for delaying for x ms
-void timedisplay(char *line2); //prints the temperature, is passed nADC
+void timedisplay(); //prints the temperature, is passed nADC
 void delay_microsec(unsigned microsec);
 void PulseEnablePin(void); //sequences the enable pin
 void pushNibble(uint8_t nibble);  //puts one nibble onto data pins
