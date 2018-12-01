@@ -9,6 +9,7 @@
 
 #include "msp.h"
 #include <stdio.h>
+#include <string.h>
 
 void ADC14_init(void); // initialize ADC
 void PortADC_init(void); //initialize ADC14 port
@@ -23,7 +24,6 @@ void displayinit(); //sets up the screen so we can update what we need
 void readtemp(); //function for reading the temp in F
 void readpwm(); //function for LDC pwm
 void timerA_lights();   //controls lights using timerA
-void updatetime(); //function to update the time to strings
 
 //Functions For LCD
 void systick_start(void); //prototype for initializing timer
@@ -39,12 +39,13 @@ void dataWrite(uint8_t data);   //will write one bit of data by calling pushByte
 
 int time_update = 0, alarm_update = 0;
 uint8_t hours, mins, secs;
-char hour_s[5], min_s[5], sec_s[5];
+char time[50];
+
 
 enum states {
     SETTIME,
     ALARM,
-    WAIT,
+    STANDBY,
     B
             };
 
@@ -73,7 +74,7 @@ void main(void)
 
     __enable_interrupt();
 
-    enum states state= WAIT;
+    enum states state= STANDBY;
 
     while(1)
     {
@@ -81,7 +82,9 @@ void main(void)
                 {
                     switch(state)
                 {
-                case WAIT:
+                case STANDBY:
+                    //sprintf(time,"%02d:%02d:%02d\n",hours,mins,secs);
+                  //  timedisplay();
 
                     break;
 
@@ -97,7 +100,7 @@ void main(void)
 
                      break;
                 default:
-                    state= WAIT;
+                    state= STANDBY;
                 }
 
                 }
@@ -412,19 +415,17 @@ void dataWrite(uint8_t data) //will write one bit of data by calling pushByte()
 //------------------------------------------------------------------------------------------------------------------
 //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 //--------------------------------------------------------------------------------------------------------------------
-void timedisplay(char *line2) //prints the temperature, is passed nADC
+void timedisplay()//prints the temperature, is passed nADC
 {
 
      int i=0;
-     write_command(0b11000000); //moves cursor to second line
-     while(temperature[i] != '\0')
+     write_command(0b10000011); //moves cursor to first line
+     while(time[i] != '\0')
      {
-         if (line2[i] != '\0')
-             dataWrite(temperature[i]);
+         if (time[i] != '\0')
+             dataWrite(time[i]);
          i++;
      }
-     dataWrite(0b11011111);
-     dataWrite('F');
 
 
 }
@@ -454,11 +455,7 @@ void readpwm()
     sprintf(temperature, "%.1f", nADC);
 
 }
-//---------------------------------------------------------------------------------------------
-void updatetime() //gets the time into strings
-{
 
-}
 //-------------------------------------------------------------------------------------------------
 //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 //---------------------------------------------------------------------------------------------------
