@@ -77,7 +77,7 @@ void main(void)
 
     while(1)
     {
-        while(1);
+        while(1)
                 {
                     switch(state)
                 {
@@ -302,15 +302,22 @@ void displayinit()
            dataWrite(line1[i]);
        i++;
    }
-   write_command(0b11010000); //moves cursor to the second line fix
-   int i=0;
-   while(line1[i] != '\0')
+   write_command(0b11000000); //moves cursor to the second line
+   i=0;
+   while(line2[i] != '\0')
    {
-       if (line1[i] != '\0')
-           dataWrite(line1[i]);
+       if (line2[i] != '\0')
+           dataWrite(line2[i]);
        i++;
    }
-
+   write_command(0b10010000); //moves cursor to the third line
+   i=0;
+   while(line3[i] != '\0')
+   {
+       if (line3[i] != '\0')
+           dataWrite(line3[i]);
+       i++;
+   }
    write_command(0b11010000); //moves cursor to the fourth line
    i=0;
    while(line4[i] != '\0')
