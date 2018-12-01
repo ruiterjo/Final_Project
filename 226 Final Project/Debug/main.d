@@ -20,6 +20,7 @@ main.obj: C:/ti/ccsv8/tools/compiler/ti-cgt-arm_18.1.3.LTS/include/stdio.h
 main.obj: C:/ti/ccsv8/tools/compiler/ti-cgt-arm_18.1.3.LTS/include/_ti_config.h
 main.obj: C:/ti/ccsv8/tools/compiler/ti-cgt-arm_18.1.3.LTS/include/linkage.h
 main.obj: C:/ti/ccsv8/tools/compiler/ti-cgt-arm_18.1.3.LTS/include/stdarg.h
+main.obj: C:/ti/ccsv8/tools/compiler/ti-cgt-arm_18.1.3.LTS/include/string.h
 
 ../main.c: 
 C:/ti/ccsv8/ccs_base/arm/include/msp.h: 
@@ -41,3 +42,4 @@ C:/ti/ccsv8/tools/compiler/ti-cgt-arm_18.1.3.LTS/include/stdio.h:
 C:/ti/ccsv8/tools/compiler/ti-cgt-arm_18.1.3.LTS/include/_ti_config.h: 
 C:/ti/ccsv8/tools/compiler/ti-cgt-arm_18.1.3.LTS/include/linkage.h: 
 C:/ti/ccsv8/tools/compiler/ti-cgt-arm_18.1.3.LTS/include/stdarg.h: 
+C:/ti/ccsv8/tools/compiler/ti-cgt-arm_18.1.3.LTS/include/string.h: 

@@ -24,11 +24,12 @@ void displayinit(); //sets up the screen so we can update what we need
 void readtemp(); //function for reading the temp in F
 void readpwm(); //function for LDC pwm
 void timerA_lights();   //controls lights using timerA
+void timedisplay(); //prints the time
+void tempdisplay(); //prints the time
 
 //Functions For LCD
 void systick_start(void); //prototype for initializing timer
 void delay_ms(unsigned); //function prototype for delaying for x ms
-void timedisplay(char *line2); //prints the temperature, is passed nADC
 void delay_microsec(unsigned microsec);
 void PulseEnablePin(void); //sequences the enable pin
 void pushNibble(uint8_t nibble);  //puts one nibble onto data pins
@@ -46,13 +47,13 @@ enum states {
     SETTIME,
     ALARM,
     STANDBY,
-    B
+    SETALARM
             };
 
 static volatile uint16_t result; //vars used in temp reading
 float nADC, nADC2;
-char temperature[50];
-int pwmLCD=0;
+char temperature[]= "75.6";
+int pwmLCD=0, wakeup=0;
 int realtimestatus=1, fasttimestatus=0, settimestatus=0, setalarmstatus=0, onoffstatus=0, snoozestatus=0;
 //------------------------------------------------------------------------------------------------------------
 //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
@@ -83,8 +84,23 @@ void main(void)
                     switch(state)
                 {
                 case STANDBY:
-                    sprintf(time,"%02d:%02d:%02d\n",hours,mins,secs);
-                    timedisplay();
+                   if(time_update){                            // Time Update Occurred (from interrupt handler)
+                        time_update = 0;                        // Reset Time Update Notification Flag
+                        sprintf(time,"%02d:%02d:%02d",hours,mins,secs); // Print time with mandatory 2 digits  each for hours, mins, seconds
+                        timedisplay();
+                    }
+
+                   if(settimestatus==1)
+                       {
+                       settimestatus=0;
+                       state= SETTIME;
+                       }
+
+                   if(setalarmstatus==1)
+                   {
+                       setalarmstatus=0;
+                       state= SETTIME;
+                   }
 
                     break;
 
@@ -93,10 +109,14 @@ void main(void)
                     break;
 
                 case SETTIME:
+                    write_command(0b10000011); //moves cursor to first line hours position
+                    write_command(0b00001101); //changed this to start the blinking cursor
+
+
 
                      break;
 
-                case B:
+                case SETALARM:
 
                      break;
                 default:
@@ -182,6 +202,14 @@ void LEDinit() //P7.7, 7.6, 7.5
     P7->SEL1 &= ~BIT7;
     P7->DIR |= BIT7;    //output
     P7-> OUT &= ~BIT7;  //set 0
+
+    TIMER_A1->CCR[0]  = 24000;        // PWM Period (# cycles of clock)
+    TIMER_A1->CCTL[1] = 0b11100000;     // CCR1 reset/set mode 7
+    TIMER_A1->CCTL[2] = 0b11100000;     // CCR1 reset/set mode 7
+    TIMER_A1->CCTL[3] = 0b11100000;     // CCR1 reset/set mode 7
+    TIMER_A1->CTL = 0b1001010000;
+
+
 }
 //------------------------------------------------------------------------------------------
 //initalize the LCD
@@ -206,7 +234,7 @@ void LCD_init(void)  //initializes the LCD
 
     write_command(8);
     delay_microsec(100);
-    write_command(0x0F); //change this to move cursor
+    write_command(0b00001100); //changed this to stop the blinking cursor
     delay_microsec(100);
     write_command(1);
     delay_microsec(100);
@@ -236,8 +264,6 @@ void ADC14_init() //Kandalaft code
   ADC14->MCTL[0] =     0x00000000;      // ADC14INCHx = 1 for mem[0] TEMPERATURE
   ADC14->MCTL[1] =     0x00000001;      // ADC14INCHx = 1 for mem[1] LCD BRIGHTNESS
 
-  // ADC14->MCTL[0] =  ADC14->MCTL[0] =  0x00000000;
-  // ADC14->CTL0 |=       0x00000002;       // starts the ADC after configuration
   ADC14->CTL0 |=       ADC14_CTL0_ENC;  // enable ADC14ENC, Starts the ADC after confg.
 
 
@@ -250,12 +276,12 @@ void RTC_Init(){
     RTC_C->CTL13 = 0;
 
     RTC_C->TIM0 = 0<<8 | 0;//0 min, 0 secs
-    RTC_C->TIM1 = 0<<8 | 0;  //sunday, 12 am
+    RTC_C->TIM1 = 0<<8 | 12;  //sunday, 12 am
     RTC_C->YEAR = 2018;
     //Alarm at 2:46 pm
     RTC_C->AMINHR = 14<<8 | 46 | BIT(15) | BIT(7);  //bit 15 and 7 are Alarm Enable bits
     RTC_C->ADOWDAY = 0;
-    RTC_C->PS1CTL = 0b00010;  //1/64 second interrupt CHECK THIS
+    RTC_C->PS1CTL = 0b11010;  //1/64 second interrupt CHECK THIS
 
     RTC_C->CTL0 = (0xA500) | BIT5; //turn on interrupt
     RTC_C->CTL13 = 0;
@@ -283,7 +309,8 @@ void timerAinterrupt_init() //for the wake up lights
 {
     TIMER_A0->CCR[0]  = 30000-1;              // PWM Period (# cycles of clock)
 
-    TIMER_A0->CTL = 0b1000010010; //smclk, up mode, no divder, IE enabled
+    TIMER_A0->CTL = 0b1000000010; //smclk, stop mode, no divder, IE enabled  dont want it to be on untill 5 min before alarm
+   // TIMER_A0->CTL = 0b1000010010; //smclk, up mode, no divder, IE enabled
 
     NVIC_EnableIRQ(TA2_0_IRQn);
 
@@ -336,6 +363,146 @@ void displayinit()
 //--------------------------------------------------------------------------------------
 //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 //---------------------------------------------------------------------------------------
+
+void timedisplay()//prints the current time
+{
+     sprintf(time,"%02d:%02d:%02d",hours,mins,secs); // Print time with mandatory 2 digits  each for hours, mins, seconds
+     int i=0;
+     write_command(0b10000011); //moves cursor to first line hours position
+     while(time[i] != '\0')
+     {
+         if (time[i] != '\0')
+             dataWrite(time[i]);
+         i++;
+     }
+     tempdisplay();
+}
+//--------------------------------------------------------------------------------------------------------------------
+void tempdisplay()//prints the temperature, is passed nADC
+{
+    readtemp();
+     int i=0;
+     write_command(0b11011001); //moves cursor to forth line 10th spot
+     while(temperature[i] != '\0')
+     {
+         if (temperature[i] != '\0')
+             dataWrite(temperature[i]);
+         i++;
+     }
+}
+
+//---------------------------------------------------------------------------------------------------
+//reads the temp
+void readtemp()
+{
+    ADC14->CTL0 |= ADC14_CTL0_SC;        //start conversion
+    while ( (!ADC14->IFGR0 & BIT0) );     //wait for conversion to complete
+    result = ADC14->MEM[0];             // get the value from the ADC
+    nADC= ((result*(3300))/16383);   //converts the adc value to voltage in mv
+    nADC= (nADC-500)/10;
+    nADC= (9.0/5.0)*nADC + 32; //to degrees F
+    sprintf(temperature, "%.1f", nADC);
+
+}
+//---------------------------------------------------------------------------------------------------
+//reads the LCD pwm
+void readpwm()
+{
+    ADC14->CTL0 |= ADC14_CTL0_SC;        //start conversion
+    while ( (!ADC14->IFGR0 & BIT0) );     //wait for conversion to complete
+    result = ADC14->MEM[1];             // get the value from the ADC
+    nADC2= ((result*(3300))/16383);   //converts the adc value to voltage in mv
+    nADC2= (nADC2/330.0) *100; //should be int between 0 and 100
+    pwmLCD= nADC2;
+
+}
+
+//-------------------------------------------------------------------------------------------------
+//>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+//---------------------------------------------------------------------------------------------------
+void RTC_C_IRQHandler()
+{
+    if(RTC_C->PS1CTL & BIT0){                           // PS1 Interrupt Happened
+        hours = RTC_C->TIM1 & 0x00FF;                   // Record hours (from bottom 8 bits of TIM1)
+        mins = (RTC_C->TIM0 & 0xFF00) >> 8;             // Record minutes (from top 8 bits of TIM0)
+        secs = RTC_C->TIM0 & 0x00FF;                    // Record seconds (from bottom 8 bits of TIM0)
+        // For increasing the number of seconds  every PS1 interrupt (to allow time travel)
+//        if(secs != 59){                                 // If not  59 seconds, add 1 (otherwise 59+1 = 60 which doesn't work)
+//            RTC_C->TIM0 = RTC_C->TIM0 + 1;
+//        }
+//        else {
+//            RTC_C->TIM0 = (((RTC_C->TIM0 & 0xFF00) >> 8)+1)<<8;  // Add a minute if at 59 seconds.  This also resets seconds.
+//                                                                 // TODO: What happens if minutes are at 59 minutes as well?
+//            time_update = 1;                                     // Send flag to main program to notify a time update occurred.
+//        }
+        time_update = 1;
+        RTC_C->PS1CTL &= ~BIT0;                         // Reset interrupt flag
+    }
+    if(RTC_C->CTL0 & BIT1)                              // Alarm happened!
+    {
+        alarm_update = 1;                               // Send flag to main program to notify a time update occurred.
+        RTC_C->CTL0 = (0xA500) | BIT5;                  // Resetting the alarm flag.  Need to also write the secret code
+                                                        // and rewrite the entire register.
+                                                        // TODO: It seems like there is a better way to preserve what was already
+                                                        // there in case the setup of this register needs to change and this line
+                                                        // is forgotten to be updated.
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+// interrupt handler to set button status when pushed
+void PORT1_IRQHandler()
+{
+    if (P1->IFG &BIT0)
+    {
+        P1->IFG &= ~BIT0;
+        settimestatus=1;
+    }
+    if (P1->IFG &BIT1)
+    {
+        P1->IFG &= ~BIT1;
+        realtimestatus=1;
+    }
+    if(P1->IFG &BIT4)
+    {
+        P1->IFG &= ~BIT4;
+        fasttimestatus=1;
+
+    }
+    if (P1->IFG &BIT5)
+    {
+        P1->IFG &= ~BIT5;
+        snoozestatus=1;
+
+    }
+    if (P1->IFG &BIT6)
+    {
+        P1->IFG &= ~BIT6;
+        onoffstatus=1;
+    }
+    if (P1->IFG &BIT7)
+    {
+        P1->IFG &= ~BIT7;
+        setalarmstatus=1;
+
+    }
+
+}
+//--------------------------------------------------------------------------------------------
+//wake up lights
+void TA2_0_IRQHandler()
+{
+    if (TIMER_A2->CTL & BIT0)
+    {
+        wakeup+=1;
+        TIMER_A0-> CCR[1]= (wakeup/100.00)*24000;
+        TIMER_A0-> CCR[2]= (wakeup/100.00)*24000;
+
+    }
+}
+//------------------------------------------------------------------------------------------------------------------
+//>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+//--------------------------------------------------------------------------------------------------------------------
 //Starts the systick timer for LCD delays
 void systick_start() //initialize timer
 {
@@ -411,123 +578,4 @@ void dataWrite(uint8_t data) //will write one bit of data by calling pushByte()
 {
     P6-> OUT |= BIT0;
     pushByte(data);
-}
-//------------------------------------------------------------------------------------------------------------------
-//>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-//--------------------------------------------------------------------------------------------------------------------
-void timedisplay()//prints the temperature, is passed nADC
-{
-
-     int i=0;
-     write_command(0b10000011); //moves cursor to first line
-     while(time[i] != '\0')
-     {
-         if (time[i] != '\0')
-             dataWrite(time[i]);
-         i++;
-     }
-
-
-}
-
-//---------------------------------------------------------------------------------------------------
-//reads the temp
-void readtemp()
-{
-    ADC14->CTL0 |= ADC14_CTL0_SC;        //start conversion
-    while ( (!ADC14->IFGR0 & BIT0) );     //wait for conversion to complete
-    result = ADC14->MEM[0];             // get the value from the ADC
-    nADC= ((result*(3300))/16383);   //converts the adc value to voltage in mv
-    nADC= (nADC-500)/10;
-    nADC= (9.0/5.0)*nADC + 32; //to degrees F
-    sprintf(temperature, "%.1f", nADC);
-
-}
-//---------------------------------------------------------------------------------------------------
-//reads the LCD pwm
-void readpwm()
-{
-    ADC14->CTL0 |= ADC14_CTL0_SC;        //start conversion
-    while ( (!ADC14->IFGR0 & BIT0) );     //wait for conversion to complete
-    result = ADC14->MEM[0];             // get the value from the ADC
-    nADC= ((result*(3300))/16383);   //converts the adc value to voltage in mv
-    nADC= (nADC-500)/10;
-    sprintf(temperature, "%.1f", nADC);
-
-}
-
-//-------------------------------------------------------------------------------------------------
-//>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-//---------------------------------------------------------------------------------------------------
-void RTC_C_IRQHandler()
-{
-    if(RTC_C->PS1CTL & BIT0){
-        hours = RTC_C->TIM1 & 0x00FF;
-        mins = (RTC_C->TIM0 & 0xFF00) >> 8;
-        secs = RTC_C->TIM0 & 0x00FF;
-        if(secs != 59){
-            RTC_C->TIM0 = RTC_C->TIM0 + 1;
-        }
-        else {
-            RTC_C->TIM0 = (((RTC_C->TIM0 & 0xFF00) >> 8)+1)<<8;
-            time_update = 1;
-        }
-        RTC_C->PS1CTL &= ~BIT0;
-    }
-    if(RTC_C->CTL0 & BIT1)
-    {
-        alarm_update = 1;
-        RTC_C->CTL0 = (0xA500) | BIT5;
-    }
-}
-
-//------------------------------------------------------------------------------------------------------------------------
-// interrupt handler to set button status when pushed
-void PORT1_IRQHandler()
-{
-    if (P1->IFG &BIT0)
-    {
-        P1->IFG &= ~BIT0;
-        settimestatus=1;
-    }
-    if (P1->IFG &BIT1)
-    {
-        P1->IFG &= ~BIT1;
-        realtimestatus=1;
-    }
-    if(P1->IFG &BIT4)
-    {
-        P1->IFG &= ~BIT4;
-        fasttimestatus=1;
-
-    }
-    if (P1->IFG &BIT5)
-    {
-        P1->IFG &= ~BIT5;
-        snoozestatus=1;
-
-    }
-    if (P1->IFG &BIT6)
-    {
-        P1->IFG &= ~BIT6;
-        onoffstatus=1;
-    }
-    if (P1->IFG &BIT7)
-    {
-        P1->IFG &= ~BIT7;
-        setalarmstatus=1;
-
-    }
-
-}
-//--------------------------------------------------------------------------------------------
-//wake up lights
-void TA2_0_IRQHandler()
-{
-    if (TIMER_A2->CTL & BIT0)
-    {
-        pwmLCD+=1;
-        TIMER_A0-> CCR[0]= (pwmLCD/100.00)*37500;
-
-    }
 }
