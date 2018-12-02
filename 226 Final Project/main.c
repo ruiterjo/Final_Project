@@ -30,10 +30,9 @@ void tempdisplay(); //prints the time
 //Functions For LCD
 void systick_start(void); //prototype for initializing timer
 void delay_ms(unsigned); //function prototype for delaying for x ms
-<<<<<<< HEAD
-=======
-void timedisplay(); //prints the temperature, is passed nADC
->>>>>>> branch 'master' of https://github.com/ruiterjo/Final_Project.git
+
+void timedisplay(); //prints the time, is passed nADC
+
 void delay_microsec(unsigned microsec);
 void PulseEnablePin(void); //sequences the enable pin
 void pushNibble(uint8_t nibble);  //puts one nibble onto data pins
@@ -64,7 +63,7 @@ int realtimestatus=1, fasttimestatus=0, settimestatus=0, setalarmstatus=0, onoff
 //------------------------------------------------------------------------------------------------------------
 void main(void)
 {
-	WDT_A->CTL = WDT_A_CTL_PW | WDT_A_CTL_HOLD;		// stop watchdog timer
+    WDT_A->CTL = WDT_A_CTL_PW | WDT_A_CTL_HOLD;     // stop watchdog timer
     systick_start(); //Start up Systick
 
     LCD_init(); // initializations
@@ -369,18 +368,59 @@ void displayinit()
 
 void timedisplay()//prints the current time
 {
-     sprintf(time,"%02d:%02d:%02d",hours,mins,secs); // Print time with mandatory 2 digits  each for hours, mins, seconds
-     int i=0;
-     write_command(0b10000011); //moves cursor to first line hours position
-     while(time[i] != '\0')
+    if(hours<=12)
      {
+     s    if(hours<=12)
+     {    if(hours<=12)
+     {
+d",hours,mins,secs); // Print time with mandatory 2 digits  each for hours, mins, seconds
+     int i=0;
+     write_command(0b10000011); /     write_command(0b10000010); //moves cursor to first line hours 2 position
+ {
          if (time[i] != '\0')
              dataWrite(time[i]);
          i++;
      }
      tempdisplay();
 }
-//--------------------------------------------------------------------------------------------------------------------
+//-     dataWrite(' ');
+     dataWrite('A');
+     tempdispla     dataWrite(' ');
+     dataWrite('A');
+     tempdisplay();}
+    if(hours>12)
+    {
+        hours=hours-12;
+        sprintf(time,"%02d:%02d:%02d",hours,mins,secs); // Print time with mandatory 2 digits  each for hours, mins, seconds
+        int i=0;
+        write_command(0b10000011); //moves cursor to first line hours 1 position
+        while(time[i] != '\0')
+        {
+            if (time[i] != '\0')
+                dataWrite(time[i]);
+            i++;
+        }
+        dataWrite(' ');
+        dataWrite('P');
+        tempdisplay();
+    }
+(hours>12)
+    {
+        hours=hours-12;
+        sprintf(time,"%02d:%02d:%02d",hours,mins,secs); // Print time with mandatory 2 digits  each for hours, mins, seconds
+        int i=0;
+        write_command(0b10000011); //moves cursor to first line hours 1 position
+        while(time[i] != '\0')
+        {
+            if (time[i] != '\0')
+                dataWrite(time[i]);
+            i++;
+        }
+        dataWrite(' ');
+        dataWrite('P');
+        tempdisplay();
+    }
+--------------------------------------------------------------------------------------
 void tempdisplay()//prints the temperature, is passed nADC
 {
     readtemp();
