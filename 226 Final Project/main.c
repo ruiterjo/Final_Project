@@ -113,8 +113,7 @@ void main(void)
                     write_command(0b00001101); //changed this to start the blinking cursor
 
 
-
-                     break;
+                    break;
 
                 case SETALARM:
 
