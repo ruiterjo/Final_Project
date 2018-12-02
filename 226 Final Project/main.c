@@ -30,6 +30,10 @@ void tempdisplay(); //prints the time
 //Functions For LCD
 void systick_start(void); //prototype for initializing timer
 void delay_ms(unsigned); //function prototype for delaying for x ms
+<<<<<<< HEAD
+=======
+void timedisplay(); //prints the temperature, is passed nADC
+>>>>>>> branch 'master' of https://github.com/ruiterjo/Final_Project.git
 void delay_microsec(unsigned microsec);
 void PulseEnablePin(void); //sequences the enable pin
 void pushNibble(uint8_t nibble);  //puts one nibble onto data pins
