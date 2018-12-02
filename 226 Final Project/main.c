@@ -56,6 +56,7 @@ enum states {
 static volatile uint16_t result; //vars used in temp reading
 float nADC, nADC2;
 char temperature[]= "75.6";
+char XM='A';
 int pwmLCD=0, wakeup=0;
 int realtimestatus=1, fasttimestatus=0, settimestatus=0, setalarmstatus=0, onoffstatus=0, snoozestatus=0;
 //------------------------------------------------------------------------------------------------------------
@@ -277,8 +278,8 @@ void RTC_Init(){
     RTC_C->CTL0 = (0xA500);
     RTC_C->CTL13 = 0;
 
-    RTC_C->TIM0 = 0<<8 | 0;//0 min, 0 secs
-    RTC_C->TIM1 = 0<<8 | 12;  //sunday, 12 am
+    RTC_C->TIM0 = 59<<8 | 55;//0 min, 0 secs
+    RTC_C->TIM1 = 0<<8 | 0;  //sunday, 12 pm
     RTC_C->YEAR = 2018;
     //Alarm at 2:46 pm
     RTC_C->AMINHR = 14<<8 | 46 | BIT(15) | BIT(7);  //bit 15 and 7 are Alarm Enable bits
@@ -368,36 +369,53 @@ void displayinit()
 
 void timedisplay()//prints the current time
 {
+    if(hours==0)
+       {
+        XM='A';
+        sprintf(time,"12:%02d:%02d",mins,secs); // Print time with mandatory 2 digits  each for hours, mins, seconds
+       }
     if(hours<=12)
      {
-     sprintf(time,"%02d:%02d:%02d",hours,mins,secs); // Print time with mandatory 2 digits  each for hours, mins, seconds
-     int i=0;
-     write_command(0b10000010); //moves cursor to first line hours 2 position
-     while(time[i] != '\0')
-     {
-         if (time[i] != '\0')
-             dataWrite(time[i]);
-         i++;
+         if(hours<=9)
+            {
+             sprintf(time," %d:%02d:%02d",hours,mins,secs); // Print time with mandatory 2 digits  each for hours, mins, seconds
+             XM='A';
+            }
+         if(hours>9)
+             {
+             XM='A';
+             sprintf(time,"%02d:%02d:%02d",hours,mins,secs); // Print time with mandatory 2 digits  each for hours, mins, seconds
+             if(hours==12)
+                 XM= 'P';
+             }
      }
-     dataWrite(' ');
-     dataWrite('A');
-     tempdisplay();}
-    if(hours>12)
-    {
-        hours=hours-12;
-        sprintf(time,"%02d:%02d:%02d",hours,mins,secs); // Print time with mandatory 2 digits  each for hours, mins, seconds
-        int i=0;
-        write_command(0b10000011); //moves cursor to first line hours 1 position
-        while(time[i] != '\0')
+
+    if((hours>12))
+    {    XM= 'P';
+        if(hours<=21)
         {
-            if (time[i] != '\0')
-                dataWrite(time[i]);
-            i++;
+            hours=hours-12;
+            sprintf(time," %d:%02d:%02d",hours,mins,secs); // Print time with mandatory 2 digits  each for hours, mins, seconds
+
         }
-        dataWrite(' ');
-        dataWrite('P');
-        tempdisplay();
+        if(hours>21)
+        {
+            hours=hours-12;
+            sprintf(time,"%02d:%02d:%02d",hours,mins,secs); // Print time with mandatory 2 digits  each for hours, mins, seconds
+
+        }
     }
+    int i=0;
+    write_command(0b10000011); //moves cursor to first line hours position
+    while(time[i] != '\0')
+    {
+        if (time[i] != '\0')
+            dataWrite(time[i]);
+        i++;
+    }
+    dataWrite(' ');
+    dataWrite(XM);
+    tempdisplay();
 }
 //--------------------------------------------------------------------------------------------------------------------
 void tempdisplay()//prints the temperature, is passed nADC
