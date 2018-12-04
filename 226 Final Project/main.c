@@ -25,7 +25,15 @@ void readtemp(); //function for reading the temp in F
 void readpwm(); //function for LDC pwm
 void timerA_lights();   //controls lights using timerA
 void timedisplay(); //prints the time
+void timedisplaySET();//prints the current time that you are trying to set
+void alarmdisplay();
 void tempdisplay(); //prints the time
+void sethoursmins(); //writes to rtc
+void setalarm();
+uint8_t debounceSETTIME(); //function prototype for debouncing a switch
+uint8_t debounceSETALARM(); //function prototype for debouncing a switch
+uint8_t debounceDOWN(); //function prototype for debouncing a switch
+uint8_t debounceUP(); //function prototype for debouncing a switch
 
 //Functions For LCD
 void systick_start(void); //prototype for initializing timer
@@ -43,27 +51,33 @@ void dataWrite(uint8_t data);   //will write one bit of data by calling pushByte
 
 int time_update = 0, alarm_update = 0;
 uint8_t hours, mins, secs;
+uint8_t sethours=0, setmins=0;
+uint8_t setAhours=0, setAmins=0;
 char time[50];
+char timeSET[50];
+char alarmSET[50];
 
 
 enum states {
-    SETTIME,
+    SETTIMEH,
+    SETTIMEM,
     ALARM,
     STANDBY,
-    SETALARM
-            };
+    SETALARMH,
+    SETALARMM
+};
 
 static volatile uint16_t result; //vars used in temp reading
-float nADC, nADC2;
+float nADC, nADC2, pwmLCD;
 char temperature[]= "75.6";
 char XM='A';
-int pwmLCD=0, wakeup=0;
+int wakeup=0;
 int realtimestatus=1, fasttimestatus=0, settimestatus=0, setalarmstatus=0, onoffstatus=0, snoozestatus=0;
 //------------------------------------------------------------------------------------------------------------
 //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 //------------------------------------------------------------------------------------------------------------
 void main(void)
-{
+ {
     WDT_A->CTL = WDT_A_CTL_PW | WDT_A_CTL_HOLD;     // stop watchdog timer
     systick_start(); //Start up Systick
 
@@ -76,6 +90,12 @@ void main(void)
     timerAinterrupt_init(); //for the wake up lights
     speakerinit();
     displayinit();
+
+    P2->SEL0 &= ~BIT0; //LED
+    P2->SEL1 &= ~BIT0;
+    P2->DIR |= BIT0;
+    P2->OUT &= ~BIT0;
+
 
     __enable_interrupt();
 
@@ -94,16 +114,48 @@ void main(void)
                         timedisplay();
                     }
 
-                   if(settimestatus==1)
+                   if(debounceSETTIME())
                        {
-                       settimestatus=0;
-                       state= SETTIME;
+                       state= SETTIMEH;
                        }
 
-                   if(setalarmstatus==1)
+                   if(debounceSETALARM())
                    {
-                       setalarmstatus=0;
-                       state= SETTIME;
+                       state= SETALARMH;
+                   }
+                   if(debounceUP())
+                   {
+                       onoffstatus+=1;
+                       if(onoffstatus==1)
+                       {
+                           write_command(0b10010000); //moves cursor to the third line
+                           dataWrite('O');
+                           dataWrite('N');
+                           dataWrite(' ');
+                           dataWrite(' ');
+                           dataWrite(' ');
+                           dataWrite(' ');
+                           //enable alarm
+                           RTC_C->CTL0 = (0xA500);
+                           RTC_C->AMINHR |= BIT(15) | BIT(7);  //bit 15 and 7 are Alarm Enable bits
+                           RTC_C->CTL13 = 0;
+                       }
+                       if(onoffstatus==2)
+                       {
+                           write_command(0b10010000); //moves cursor to the third line
+                           dataWrite('O');
+                           dataWrite('F');
+                           dataWrite('F');
+                           dataWrite(' ');
+                           dataWrite(' ');
+                           dataWrite(' ');
+                           //disable alarm
+                           RTC_C->CTL0 = (0xA500);
+                           RTC_C->AMINHR = setAhours<<8 | setAmins;  //bit 15 and 7 are Alarm Enable bits
+                           RTC_C->CTL13 = 0;
+                           onoffstatus=0;
+
+                       }
                    }
 
                     break;
@@ -112,16 +164,167 @@ void main(void)
 
                     break;
 
-                case SETTIME:
-                    write_command(0b10000011); //moves cursor to first line hours position
-                    write_command(0b00001101); //changed this to start the blinking cursor
+                case SETTIMEH:
+                    settimestatus= 1;
+                    while((settimestatus))
+                    {    write_command(0b10000011); //moves cursor to first line hours position
+                         dataWrite(' ');
+                         dataWrite(' ');
+                         delay_ms(70);
+                        if (debounceUP())
+                      {
+                        if(sethours<=23)
+                        {
+                            sethours+=1;
+                        }
+                        else
+                        {
+                            sethours=0;
+                        }
+                      }
+                    if (debounceDOWN())
+                    {
+                        if(sethours>=1)
+                        {
+                            sethours-=1;
+                        }
+                        else
+                        {
+                            sethours=23;
+                        }
+                    }
+                    sethoursmins();
+                    timedisplaySET();
+                    if( debounceSETTIME())
+                        settimestatus=0;
+                }
+                    if(settimestatus=1)
+                        {
+                        hours=sethours;
+                        state= SETTIMEM;
+                        }
 
+                    break;
+                case SETTIMEM:
+                    settimestatus=1;
+                    while((settimestatus))
+                    {    write_command(0b10000110); //moves cursor to first line minutes position
+                        dataWrite(' ');
+                        dataWrite(' ');
+                        delay_ms(70);
+
+                        if (debounceUP())
+                    {
+                        if(setmins<60)
+                        {
+                            setmins+=1;
+                        }
+                        else
+                        {
+                            setmins=0;
+                        }
+                    }
+                    if (debounceDOWN())
+                    {
+                        if(setmins>0)
+                        {
+                            setmins-=1;
+                        }
+                        else
+                        {
+                            setmins=59;
+                        }
+                    }
+                    sethoursmins();
+                    timedisplaySET();
+                    if( debounceSETTIME())
+                        settimestatus=0;
+                    }
+                    if(settimestatus=1)
+                        {
+                        mins=setmins;
+                        state= STANDBY;
+                        }
 
                     break;
 
-                case SETALARM:
+                case SETALARMH:
+                    setalarmstatus= 1;
+                    while((setalarmstatus))
+                    {  write_command(0b11010000); //moves cursor to the fourth line hours
+                        dataWrite(' ');
+                        dataWrite(' ');
+                        delay_ms(70);
+                        if (debounceUP())
+                    {
+                        if(setAhours<=23)
+                        {
+                            setAhours+=1;
+                        }
+                        else
+                        {
+                            setAhours=0;
+                        }
+                    }
+                    if (debounceDOWN())
+                    {
+                        if(setAhours>=1)
+                        {
+                            setAhours-=1;
+                        }
+                        else
+                        {
+                            setAhours=23;
+                        }
+                    }
+                    setalarm();
+                    alarmdisplay();
+                    if( debounceSETALARM())
+                        setalarmstatus=0;
+                }
+                    if(setalarmstatus=1)
+                        state= SETALARMM;
+                     break;
+
+                case SETALARMM:
+
+                    setalarmstatus=1;
+                    while((setalarmstatus))
+                     {  write_command(0b11010011); //moves cursor to the fourth line minutes
+                        dataWrite(' ');
+                        dataWrite(' ');
+                        if (debounceUP())
+                    {
+                        if(setAmins<59)
+                        {
+                            setAmins+=1;
+                        }
+                        else
+                        {
+                            setAmins=0;
+                        }
+                    }
+                    if (debounceDOWN())
+                    {
+                        if(setAmins>0)
+                        {
+                            setAmins-=1;
+                        }
+                        else
+                        {
+                            setAmins=59;
+                        }
+                    }
+                    setalarm();
+                    alarmdisplay();
+                    if( debounceSETALARM())
+                        setalarmstatus=0;
+                    }
+                    if(setalarmstatus=1)
+                        state= STANDBY;
 
                      break;
+
                 default:
                     state= STANDBY;
                 }
@@ -165,43 +368,43 @@ void buttoninit() //set up all the buttons used.
     P1->DIR &= ~BIT0;
     P1-> REN |= BIT0;  //enable resistor
     P1-> OUT |= BIT0;  //set input
-    P1-> IE |= BIT0; //set an interrupt
+
 
     P1->SEL0 &= ~BIT5;  //Button 1.5 snooze/down
     P1->SEL1 &= ~BIT5;
     P1->DIR &= ~BIT5;
     P1-> REN |= BIT5;  //enable resistor
     P1-> OUT |= BIT5;  //set input
-    P1-> IE |= BIT5; //set an interrupt
+
 
     P1->SEL0 &= ~BIT6;  //Button 1.6 on/off/up
     P1->SEL1 &= ~BIT6;
     P1->DIR &= ~BIT6;
     P1-> REN |= BIT6;  //enable resistor
     P1-> OUT |= BIT6;  //set input
-    P1-> IE |= BIT6; //set an interrupt
+
 
     P1->SEL0 &= ~BIT7;  //Button 1.7 set alarm
     P1->SEL1 &= ~BIT7;
     P1->DIR &= ~BIT7;
     P1-> REN |= BIT7;  //enable resistor
     P1-> OUT |= BIT7;  //set input
-    P1-> IE |= BIT7; //set an interrupt
+
 }
 //--------------------------------------------------------------------------------------
 void LEDinit() //P7.7, 7.6, 7.5
 {
-    P7->SEL0 &= ~BIT5;  //LCD LED 7.5
+    P7->SEL0 &= ~BIT5;  //LCD LED 7.5 TA1.3
     P7->SEL1 &= ~BIT5;
     P7->DIR |= BIT5;    //output
     P7-> OUT &= ~BIT5;  //set 0
 
-    P7->SEL0 &= ~BIT6;  //WHITE LED 7.6
+    P7->SEL0 &= ~BIT6;  //WHITE LED 7.6 TA1.2
     P7->SEL1 &= ~BIT6;
     P7->DIR |= BIT6;    //output
     P7-> OUT &= ~BIT6;  //set 0
 
-    P7->SEL0 &= ~BIT7;  //BLUE LED 7.7
+    P7->SEL0 &= ~BIT7;  //BLUE LED 7.7 TA1.1
     P7->SEL1 &= ~BIT7;
     P7->DIR |= BIT7;    //output
     P7-> OUT &= ~BIT7;  //set 0
@@ -259,13 +462,13 @@ void PortADC_init ()
 //------------------------------------------------------------------------------------
 void ADC14_init() //Kandalaft code
 {
-  ADC14 ->CTL0 |= 0b00;   // disable ADC converter during initialization
+  ADC14 ->CTL0 |=      0b00;   // disable ADC converter during initialization
   ADC14->CTL0  |=      0x04200210;      // S/H pulse mode, SMCLK, 16 sample clocks
   ADC14->CTL1   =      0x00000030;      // 14 bit resolution
   ADC14->CTL1  |=      0x00000000;      // convert for mem0 register
 
-  ADC14->MCTL[0] =     0x00000000;      // ADC14INCHx = 1 for mem[0] TEMPERATURE
-  ADC14->MCTL[1] =     0x00000001;      // ADC14INCHx = 1 for mem[1] LCD BRIGHTNESS
+  ADC14->MCTL[0] =     0;      // ADC14INCHx = 0 for mem[0] TEMPERATURE
+  ADC14->MCTL[1] =     1;      // ADC14INCHx = 1 for mem[1] LCD BRIGHTNESS
 
   ADC14->CTL0 |=       ADC14_CTL0_ENC;  // enable ADC14ENC, Starts the ADC after confg.
 
@@ -279,10 +482,10 @@ void RTC_Init(){
     RTC_C->CTL13 = 0;
 
     RTC_C->TIM0 = 59<<8 | 55;//0 min, 0 secs
-    RTC_C->TIM1 = 0<<8 | 0;  //sunday, 12 pm
+    RTC_C->TIM1 =  0;  // 12 am
     RTC_C->YEAR = 2018;
     //Alarm at 2:46 pm
-    RTC_C->AMINHR = 14<<8 | 46 | BIT(15) | BIT(7);  //bit 15 and 7 are Alarm Enable bits
+    RTC_C->AMINHR = 0<<8 | 0 ;  //bit 15 and 7 are Alarm Enable bits are not enabled
     RTC_C->ADOWDAY = 0;
     RTC_C->PS1CTL = 0b11010;  //1/64 second interrupt CHECK THIS
 
@@ -369,14 +572,15 @@ void displayinit()
 
 void timedisplay()//prints the current time
 {
-    if(hours==0)
-       {
-        XM='A';
-        sprintf(time,"12:%02d:%02d",mins,secs); // Print time with mandatory 2 digits  each for hours, mins, seconds
-       }
+
     if(hours<=12)
      {
-         if(hours<=9)
+        if(hours==0)
+           {
+            XM='A';
+            sprintf(time,"12:%02d:%02d",mins,secs); // Print time with mandatory 2 digits  each for hours, mins, seconds
+           }
+        if((hours<=9)&& (hours>=1))
             {
              sprintf(time," %d:%02d:%02d",hours,mins,secs); // Print time with mandatory 2 digits  each for hours, mins, seconds
              XM='A';
@@ -416,6 +620,106 @@ void timedisplay()//prints the current time
     dataWrite(' ');
     dataWrite(XM);
     tempdisplay();
+    readpwm();
+}
+//---------------------------------------------------------------------------------------------------------------------
+void timedisplaySET()//prints the current time that you are trying to set
+{
+
+    if(sethours<=12)
+     {
+        if(sethours==0)
+           {
+            XM='A';
+            sprintf(timeSET,"12:%02d:00",setmins); // Print time with mandatory 2 digits  each for hours, mins, seconds
+           }
+        if((sethours<=9)&& (sethours>=1))
+            {
+             sprintf(timeSET," %d:%02d:00",sethours,setmins); // Print time with mandatory 2 digits  each for hours, mins, seconds
+             XM='A';
+            }
+         if(sethours>9)
+             {
+             XM='A';
+             sprintf(timeSET,"%02d:%02d:00",sethours,setmins); // Print time with mandatory 2 digits  each for hours, mins, seconds
+             if(sethours==12)
+                 XM= 'P';
+             }
+     }
+
+    if((sethours>12))
+    {    XM= 'P';
+        if(sethours<=21)
+        {
+            sprintf(timeSET," %d:%02d:00",(sethours-12),setmins); // Print time with mandatory 2 digits  each for hours, mins, seconds
+
+        }
+        if(sethours>21)
+        {
+            sprintf(timeSET,"%02d:%02d:00",(sethours-12),setmins); // Print time with mandatory 2 digits  each for hours, mins, seconds
+
+        }
+    }
+    int i=0;
+    write_command(0b10000011); //moves cursor to first line hours position
+    while(timeSET[i] != '\0')
+    {
+        if (timeSET[i] != '\0')
+            dataWrite(timeSET[i]);
+        i++;
+    }
+    dataWrite(' ');
+    dataWrite(XM);
+}
+//-------------------------------------------------------------------------------------------------------------------
+void alarmdisplay()
+{
+    {
+
+        if(setAhours<=12)
+         {
+            if(setAhours==0)
+               {
+                XM='A';
+                sprintf(alarmSET,"12:%02d",setAmins); // Print time with mandatory 2 digits  each for hours, mins, seconds
+               }
+            if((setAhours<=9)&& (setAhours>=1))
+                {
+                 sprintf(alarmSET," %d:%02d",setAhours,setAmins); // Print time with mandatory 2 digits  each for hours, mins, seconds
+                 XM='A';
+                }
+             if(setAhours>9)
+                 {
+                 XM='A';
+                 sprintf(alarmSET,"%02d:%02d",setAhours,setAmins); // Print time with mandatory 2 digits  each for hours, mins, seconds
+                 if(setAhours==12)
+                     XM= 'P';
+                 }
+         }
+
+        if((setAhours>12))
+        {    XM= 'P';
+            if(setAhours<=21)
+            {
+                sprintf(alarmSET," %d:%02d",(setAhours-12),setAmins); // Print time with mandatory 2 digits  each for hours, mins, seconds
+
+            }
+            if(setAhours>21)
+            {
+                sprintf(alarmSET,"%02d:%02d",(setAhours-12),setAmins); // Print time with mandatory 2 digits  each for hours, mins, seconds
+
+            }
+        }
+        int i=0;
+        write_command(0b11010000); //moves cursor to fourth line
+        while(alarmSET[i] != '\0')
+        {
+            if (alarmSET[i] != '\0')
+                dataWrite(alarmSET[i]);
+            i++;
+        }
+        dataWrite(XM);
+    }
 }
 //--------------------------------------------------------------------------------------------------------------------
 void tempdisplay()//prints the temperature, is passed nADC
@@ -452,8 +756,38 @@ void readpwm()
     while ( (!ADC14->IFGR0 & BIT0) );     //wait for conversion to complete
     result = ADC14->MEM[1];             // get the value from the ADC
     nADC2= ((result*(3300))/16383);   //converts the adc value to voltage in mv
-    nADC2= (nADC2/330.0) *100; //should be int between 0 and 100
+    nADC2= (nADC2/330.0); //should be int between 0 and 100
     pwmLCD= nADC2;
+
+    TIMER_A1->CCR[0]  = 24000;        // PWM Period (# cycles of clock)
+    TIMER_A1->CCR[3]  = pwmLCD*24000;        // PWM Period (# cycles of clock)
+    TIMER_A1->CCTL[3] = 0b11100000;     // CCR1 reset/set mode 7
+    TIMER_A1->CTL = 0b1001010000;
+
+
+}
+void sethoursmins()
+{
+    RTC_C->CTL0 = (0xA500);
+
+    RTC_C->TIM0 = setmins<<8;//x min, 0 secs
+    RTC_C->TIM1 =  sethours;  // reads from hours
+
+    RTC_C->CTL13 = 0;
+
+}
+//--------------------------------------------------------------------------------------------------
+void setalarm()
+{
+    RTC_C->CTL0 = (0xA500);
+
+
+
+    //Alarm at 2:46 pm
+    RTC_C->AMINHR = setAhours<<8 | setAmins;  //bit 15 and 7 are Alarm Enable bits not enabled
+
+
+    RTC_C->CTL13 = 0;
 
 }
 
@@ -493,11 +827,7 @@ void RTC_C_IRQHandler()
 // interrupt handler to set button status when pushed
 void PORT1_IRQHandler()
 {
-    if (P1->IFG &BIT0)
-    {
-        P1->IFG &= ~BIT0;
-        settimestatus=1;
-    }
+
     if (P1->IFG &BIT1)
     {
         P1->IFG &= ~BIT1;
@@ -509,23 +839,7 @@ void PORT1_IRQHandler()
         fasttimestatus=1;
 
     }
-    if (P1->IFG &BIT5)
-    {
-        P1->IFG &= ~BIT5;
-        snoozestatus=1;
 
-    }
-    if (P1->IFG &BIT6)
-    {
-        P1->IFG &= ~BIT6;
-        onoffstatus=1;
-    }
-    if (P1->IFG &BIT7)
-    {
-        P1->IFG &= ~BIT7;
-        setalarmstatus=1;
-
-    }
 
 }
 //--------------------------------------------------------------------------------------------
@@ -619,3 +933,56 @@ void dataWrite(uint8_t data) //will write one bit of data by calling pushByte()
     P6-> OUT |= BIT0;
     pushByte(data);
 }
+//-----------------------------------------------------------------------------------------------------------------
+uint8_t debounceSETTIME(void)   //this section of code is based on lab prep from Zuidema
+{
+    uint8_t pin_val= 0; //var set to low
+    if (!(P1->IN &BIT0)) //check button status
+        {
+        delay_ms(5); // pause for 5ms for bounce
+        if (!(P1->IN &BIT0)) //check if still pushed
+            pin_val=1;
+        while(!(P1->IN &BIT0)) {};
+        }
+        return pin_val;  //returns 1 if pushed and 0 if not
+ }
+//-----------------------------------------------------------------------------------------------------------------
+uint8_t debounceSETALARM(void)   //this section of code is based on lab prep from Zuidema
+{
+    uint8_t pin_val= 0; //var set to low
+    if (!(P1->IN &BIT7)) //check button status
+        {
+        delay_ms(5); // pause for 5ms for bounce
+        if (!(P1->IN &BIT7)) //check if still pushed
+            pin_val=1;
+        while(!(P1->IN &BIT7)) {};
+        }
+        return pin_val;  //returns 1 if pushed and 0 if not
+ }
+//-----------------------------------------------------------------------------------------------------------------
+uint8_t debounceDOWN(void)   //this section of code is based on lab prep from Zuidema
+{
+    uint8_t pin_val= 0; //var set to low
+    if (!(P1->IN &BIT5)) //check button status
+        {
+        delay_ms(5); // pause for 5ms for bounce
+        if (!(P1->IN &BIT5)) //check if still pushed
+            pin_val=1;
+        while(!(P1->IN &BIT5)) {};
+        }
+        return pin_val;  //returns 1 if pushed and 0 if not
+ }
+//-----------------------------------------------------------------------------------------------------------------
+uint8_t debounceUP(void)   //this section of code is based on lab prep from Zuidema
+{
+    uint8_t pin_val= 0; //var set to low
+    if (!(P1->IN &BIT6)) //check button status
+        {
+        delay_ms(5); // pause for 5ms for bounce
+        if (!(P1->IN &BIT6)) //check if still pushed
+            pin_val=1;
+        while(!(P1->IN &BIT6)) {};
+        }
+        return pin_val;  //returns 1 if pushed and 0 if not
+ }
+
