@@ -18,7 +18,7 @@ void LEDinit(); //set the lights and LCD pwm pin up
 void LCD_init(void);  //initializes the LCD
 void RTC_Init();
 void speakerinit(); //sets up timerA on 2.4 for the speaker
-void timerAinterrupt_init(); //for the wake up lights
+void timer32interrupt_init(); //for the wake up lights
 void displayinit(); //sets up the screen so we can update what we need
 
 void readtemp(); //function for reading the temp in F
@@ -74,7 +74,8 @@ float nADC, nADC2, pwmLCD;
 char temperature[]= "75.6";
 char XM='A';
 int wakeup=0;
-int realtimestatus=1, fasttimestatus=0, settimestatus=0, setalarmstatus=0, onoffstatus=0, snoozestatus=0, alarmstatus=0;
+int realtimestatus=1, fasttimestatus=0, settimestatus=0,
+        setalarmstatus=0, onoffstatus1=0, onoffstatus=0, snoozestatus=0, alarmstatus=0;
 //------------------------------------------------------------------------------------------------------------
 //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 //------------------------------------------------------------------------------------------------------------
@@ -89,15 +90,10 @@ void main(void)
     PortADC_init();
     buttoninit();
     LEDinit();
-    timerAinterrupt_init(); //for the wake up lights
+    timer32interrupt_init(); //for the wake up lights
     speakerinit();
     displayinit();
-
-    P2->SEL0 &= ~BIT0; //LED
-    P2->SEL1 &= ~BIT0;
-    P2->DIR |= BIT0;
-    P2->OUT &= ~BIT0;
-
+    NVIC_EnableIRQ(RTC_C_IRQn);
 
     __enable_interrupt();
 
@@ -105,7 +101,6 @@ void main(void)
 
     while(1)
     {
-        printf("%f\n",pwmLCD);
         while(1)
                 {
                     timedisplay();
@@ -115,7 +110,7 @@ void main(void)
                    if(time_update){                            // Time Update Occurred (from interrupt handler)
                         time_update = 0;                        // Reset Time Update Notification Flag
                         sprintf(time,"%02d:%02d:%02d",hours,mins,secs); // Print time with mandatory 2 digits  each for hours, mins, seconds
-                       // timedisplay();
+                        timedisplay();
                     }
                    TIMER_A0->CCR[1] = 0;
                    if(debounceSETTIME())
@@ -127,15 +122,19 @@ void main(void)
                    {
                        state= SETALARMH;
                    }
-                   if((hours == setAhours) && (mins == setAmins) && (alarmstatus))
+                   if(alarm_update)
                    {
                        state= ALARM;
+                   }
+                   if((hours==setAhours) && ((setAmins-mins)==5) && (alarmstatus))
+                   {
+                       TIMER32_1->CONTROL  = 0b11100010; //enable the interrupt
                    }
 
                    if(debounceUP())
                    {
-                       onoffstatus+=1;
-                       if(onoffstatus==1)
+                       onoffstatus1+=1;
+                       if(onoffstatus1==1)
                        {
                            write_command(0b10010000); //moves cursor to the third line
                            dataWrite('O');
@@ -145,13 +144,13 @@ void main(void)
                            dataWrite(' ');
                            dataWrite(' ');
                            //enable alarm
-                           RTC_C->CTL0 = (0xA500);
-                           RTC_C->AMINHR |= BIT(15) | BIT(7);  //bit 15 and 7 are Alarm Enable bits
-                           RTC_C->CTL13 = 0;
+                           RTC_C->CTL0 = ((0xA500) | BIT5);
+                           RTC_C->AMINHR = setAhours<<8 | setAmins | BIT(15) | BIT(7);  //bit 15 and 7 are Alarm Enable bits
                            TIMER_A0->CCR[1] = 0;
+                           alarmdisplay();
                            alarmstatus=1;
                        }
-                       if(onoffstatus==2)
+                       if(onoffstatus1==2)
                        {
                            write_command(0b10010000); //moves cursor to the third line
                            dataWrite('O');
@@ -161,10 +160,10 @@ void main(void)
                            dataWrite(' ');
                            dataWrite(' ');
                            //disable alarm
-                           RTC_C->CTL0 = (0xA500);
+                           RTC_C->CTL0 = ((0xA500));
                            RTC_C->AMINHR = setAhours<<8 | setAmins;  //bit 15 and 7 are Alarm Enable bits
-                           RTC_C->CTL13 = 0;
-                           onoffstatus=0;
+                           onoffstatus1=0;
+                           alarmdisplay();
                            TIMER_A0->CCR[1] = 0;
                            alarmstatus=0;
 
@@ -175,7 +174,16 @@ void main(void)
                     break;
 //-----------------------------------------------------------------------------------------
                 case ALARM:
-
+                    alarm_update=0; //reset flag
+                    TIMER_A1->CCR[2] = 50000;
+                    TIMER_A1->CCR[1] = 50000;
+                    TIMER32_1->CONTROL  = 0b11000010; //enable the interrupt
+                    wakeup=0;
+                    int sound=1;
+                    P1->IFG &= ~BIT6;
+                    P1->IFG &= ~BIT5; //clear flags just in case
+                 while(sound)
+                 {
                     if(time_update){                            // Time Update Occurred (from interrupt handler)
                          time_update = 0;                        // Reset Time Update Notification Flag
                          sprintf(time,"%02d:%02d:%02d",hours,mins,secs); // Print time with mandatory 2 digits  each for hours, mins, seconds
@@ -187,14 +195,10 @@ void main(void)
                     TIMER_A0->CCR[1] = 0;
                     delay_ms(100);
 
-                    if(P1->IFG & BIT5)
-                    {
-                        P1->IFG &= ~BIT5;
-                        snoozestatus=1;
-                    }
 
-                    if(snoozestatus==1)
+                    if (P1->IFG &BIT5)
                     {
+                        P1->IFG &= ~BIT5;   //clear flag
 
                         TIMER_A0->CCR[1] = 0;
                         write_command(0b10010000); //moves cursor to the third line
@@ -207,22 +211,32 @@ void main(void)
                         dataWrite('E');
                         //change alarm
                         snoozemins= mins+10;
-                        RTC_C->CTL0 = (0xA500);
-                        RTC_C->AMINHR =  setAhours | snoozemins | BIT(15) | BIT(7);  //bit 15 and 7 are Alarm Enable bits
-                        RTC_C->CTL13 = 0;
+                        RTC_C->CTL0 = ((0xA500) | BIT5);
+                        RTC_C->AMINHR =  setAhours<<8 | snoozemins | BIT(15) | BIT(7);  //bit 15 and 7 are Alarm Enable bits
                         alarmdisplaysnooze();
                         snoozestatus=0;
-                        state=STANDBY;
+                        sound=0;
+                        TIMER_A1->CCR[2] = 0;
+                        TIMER_A1->CCR[1] = 0;
 
                     }
 
-                    if(P1->IFG & BIT6)
-                      {
-                          P1->IFG &= ~BIT6;
-                          TIMER_A0->CCR[1] = 0;
-                          setalarm(); //sets it back to previous time
-                          state=STANDBY;
-                      }
+                    if (P1->IFG &BIT6)
+                       {
+                         P1->IFG &= ~BIT6;   //clear flag
+                         sound=0;
+                         TIMER_A0->CCR[1] = 0;
+                         setalarm(); //sets it back to previous time
+                         TIMER_A1->CCR[2] = 0;
+                         TIMER_A1->CCR[1] = 0;
+
+                         }
+                 }
+
+
+              state=STANDBY;
+              onoffstatus=0;
+
 
                     break;
 //------------------------------------------------------------------------------------------
@@ -231,9 +245,10 @@ void main(void)
                     settimestatus= 1;
                     while((settimestatus))
                     {    write_command(0b10000011); //moves cursor to first line hours position
-                         delay_ms(70);
-                         dataWrite(' ');
-                         dataWrite(' ');
+                    delay_ms(70);
+                    dataWrite(' ');
+                    dataWrite(' ');
+
 
                         if (P1->IFG & BIT6)
                       {
@@ -276,14 +291,15 @@ void main(void)
                     settimestatus=1;
                     while((settimestatus))
                     {    write_command(0b10000110); //moves cursor to first line minutes position
-                        delay_ms(70);
-                        dataWrite(' ');
-                        dataWrite(' ');
+                    delay_ms(70);
+                    dataWrite(' ');
+                    dataWrite(' ');
+
 
                         if (P1->IFG & BIT6)
                       {
                          P1->IFG &= ~BIT6;
-                        if(setmins<60)
+                        if(setmins<59)
                         {
                             setmins+=1;
                         }
@@ -324,6 +340,7 @@ void main(void)
                     delay_ms(70);
                     dataWrite(' ');
                     dataWrite(' ');
+
                         if (P1->IFG & BIT6)
                       {
                          P1->IFG &= ~BIT6;
@@ -362,9 +379,10 @@ void main(void)
                     setalarmstatus=1;
                     while((setalarmstatus))
                      {  write_command(0b11010011); //moves cursor to the fourth line minutes
-                         delay_ms(70);
-                         dataWrite(' ');
-                         dataWrite(' ');
+                     delay_ms(70);
+                     dataWrite(' ');
+                     dataWrite(' ');
+
                         if (P1->IFG & BIT6)
                       {
                          P1->IFG &= ~BIT6;
@@ -474,22 +492,24 @@ void LEDinit() //P7.7, 7.6, 7.5
     P7->DIR |= BIT5;    //output
 
 
-    P7->SEL0 &= ~BIT6;  //WHITE LED 7.6 TA1.2
+    P7->SEL0 |= BIT6;  //WHITE LED 7.6 TA1.2
     P7->SEL1 &= ~BIT6;
     P7->DIR |= BIT6;    //output
-    P7-> OUT &= ~BIT6;  //set 0
 
-    P7->SEL0 &= ~BIT7;  //BLUE LED 7.7 TA1.1
+
+    P7->SEL0 |= BIT7;  //BLUE LED 7.7 TA1.1
     P7->SEL1 &= ~BIT7;
     P7->DIR |= BIT7;    //output
-    P7-> OUT &= ~BIT7;  //set 0
 
 
-    TIMER_A1->CCR[0]  = 100;        // PWM Period (# cycles of clock)
+    TIMER_A1->CCR[0]  = 50000;        // PWM Period (# cycles of clock)
     TIMER_A1->CCTL[1] = 0b11100000;     // CCR1 reset/set mode 7
+    TIMER_A1->CCR[1]  = 0;
     TIMER_A1->CCTL[2] = 0b11100000;     // CCR1 reset/set mode 7
+    TIMER_A1->CCR[2]  = 0;
     TIMER_A1->CCTL[3] = 0b11100000;     // CCR1 reset/set mode 7
-    TIMER_A1->CTL = 0x0214;
+    TIMER_A1->CCR[3]  = 0;
+    TIMER_A1->CTL = 0b1000010000;
 
 
 }
@@ -562,12 +582,13 @@ void RTC_Init(){
     //Alarm at 2:46 pm
     RTC_C->AMINHR = 0<<8 | 0 ;  //bit 15 and 7 are Alarm Enable bits are not enabled
     RTC_C->ADOWDAY = 0;
-    RTC_C->PS1CTL = 0b11010;  //1/64 second interrupt CHECK THIS
+    RTC_C->PS1CTL = 0b11010;
 
-    RTC_C->CTL0 = (0xA500) | BIT5; //turn on interrupt
-    RTC_C->CTL13 = 0;
+    RTC_C->CTL0 = ((0xA500) | BIT5); //turn on interrupt
 
-    NVIC_EnableIRQ(RTC_C_IRQn);
+
+
+
 }
 //--------------------------------------------------------------------------------------------------------
 void speakerinit()
@@ -586,14 +607,12 @@ TIMER_A0->CCR[0] = 3000000 / 294;  //Math in an interrupt is bad behavior, but s
 
 }
 //-----------------------------------------------------------------------------------
-void timerAinterrupt_init() //for the wake up lights
+void timer32interrupt_init() //for the wake up lights
 {
-    TIMER_A0->CCR[0]  = 30000-1;              // PWM Period (# cycles of clock)
+    TIMER32_1->CONTROL  = 0b11000010;              // periodic, wrapping, bit 5 is enable interrupt, 32bit
+    TIMER32_1-> LOAD= 9000000;
 
-    TIMER_A0->CTL = 0b1000000010; //smclk, stop mode, no divder, IE enabled  dont want it to be on untill 5 min before alarm
-   // TIMER_A0->CTL = 0b1000010010; //smclk, up mode, no divder, IE enabled
-
-    NVIC_EnableIRQ(TA2_0_IRQn);
+    NVIC_EnableIRQ(T32_INT1_IRQn);
 
 }
 //---------------------------------------------------------------------------------------
@@ -602,8 +621,8 @@ void displayinit()
     write_command(0b00000001); //reset display
     char line1[]= "   12:00:00 AM";
     char line2[]= "Alarm:";
-    char line3[]= "OFF      Temp:";
-    char line4[]= "00:00AM  00.0";
+    char line3[]= "---      Temp:";
+    char line4[]= "--:--AM  --.-";
 
 
    int i=0;
@@ -860,6 +879,9 @@ void tempdisplay()//prints the temperature, is passed nADC
              dataWrite(temperature[i]);
          i++;
      }
+     dataWrite(0b11011111); //degree symbol
+     dataWrite('F');
+     dataWrite(' ');
 }
 
 //---------------------------------------------------------------------------------------------------
@@ -885,12 +907,12 @@ void readpwm()
     result = ADC14->MEM[1];             // get the value from the ADC
     nADC2= ((result*(3300))/16383);   //converts the adc value to voltage in mv
     nADC2= (nADC2/3300.0); //should be int between 0 and 100
-    pwmLCD= nADC2 *100;
+    pwmLCD= nADC2 ;
 
 
 
 
-    TIMER_A1->CCR[3]  =(int)(pwmLCD);        // PWM Period (# cycles of clock)
+    TIMER_A1->CCR[3]  =50000*(pwmLCD);        // PWM Period (# cycles of clock)
 
 
     ADC14->CTL1   &=~  2;      // 14 bit resolution
@@ -900,27 +922,22 @@ void readpwm()
 }
 void sethoursmins()
 {
-    RTC_C->CTL0 = (0xA500);
+    //RTC_C->CTL0 = (0xA500);
 
     RTC_C->TIM0 = setmins<<8;//x min, 0 secs
     RTC_C->TIM1 =  sethours;  // reads from hours
 
-    RTC_C->CTL13 = 0;
+    //RTC_C->CTL13 = 0;
 
 }
 //--------------------------------------------------------------------------------------------------
 void setalarm()
 {
-    RTC_C->CTL0 = (0xA500);
+    RTC_C->CTL0 = ((0xA500));
 
+    RTC_C->AMINHR = setAhours<<8 | setAmins |BIT(15) | BIT(7);  //bit 15 and 7 are Alarm Enable bits not enabled
 
-
-    //Alarm at 2:46 pm
-    RTC_C->AMINHR |= setAhours<<8 | setAmins;  //bit 15 and 7 are Alarm Enable bits not enabled
-
-
-    RTC_C->CTL13 = 0;
-
+    RTC_C->CTL0 = ((0xA500) | BIT5);
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -947,11 +964,9 @@ void RTC_C_IRQHandler()
     if(RTC_C->CTL0 & BIT1)                              // Alarm happened!
     {
         alarm_update = 1;                               // Send flag to main program to notify a time update occurred.
-        RTC_C->CTL0 = (0xA500) | BIT5;                  // Resetting the alarm flag.  Need to also write the secret code
+        RTC_C->CTL0 = (0xA500);                  // Resetting the alarm flag.  Need to also write the secret code
                                                         // and rewrite the entire register.
-                                                        // TODO: It seems like there is a better way to preserve what was already
-                                                        // there in case the setup of this register needs to change and this line
-                                                        // is forgotten to be updated.
+
     }
 }
 
@@ -971,20 +986,33 @@ void PORT1_IRQHandler()
         fasttimestatus=1;
 
     }
+    if (P1->IFG &BIT6)
+    {
+        P1->IFG &= ~BIT6;
+        onoffstatus=1;
+    }
+    if(P1->IFG &BIT5)
+    {
+        P1->IFG &= ~BIT5;
+        snoozestatus=1;
+
+    }
 
 
 }
 //--------------------------------------------------------------------------------------------
 //wake up lights
-void TA2_0_IRQHandler()
+void T32_INT1_IRQHandler()
 {
-    if (TIMER_A2->CTL & BIT0)
-    {
-        wakeup+=1;
-        TIMER_A0-> CCR[1]= (wakeup/100.00)*24000;
-        TIMER_A0-> CCR[2]= (wakeup/100.00)*24000;
+        TIMER32_1->INTCLR=1;
 
-    }
+        if(wakeup<100)
+            wakeup+=1;
+
+        TIMER_A1-> CCR[1]= (wakeup/100.0)*50000;
+        TIMER_A1-> CCR[2]= (wakeup/100.0)*50000;
+
+
 }
 //------------------------------------------------------------------------------------------------------------------
 //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
@@ -1071,6 +1099,7 @@ uint8_t debounceSETTIME(void)   //this section of code is based on lab prep from
     uint8_t pin_val= 0; //var set to low
     if (!(P1->IN &BIT0)) //check button status
         {
+        P1->IFG &= ~BIT0; //clear flags
         delay_ms(5); // pause for 5ms for bounce
         if (!(P1->IN &BIT0)) //check if still pushed
             pin_val=1;
@@ -1084,6 +1113,7 @@ uint8_t debounceSETALARM(void)   //this section of code is based on lab prep fro
     uint8_t pin_val= 0; //var set to low
     if (!(P1->IN &BIT7)) //check button status
         {
+        P1->IFG &= ~BIT7; //clear flags
         delay_ms(5); // pause for 5ms for bounce
         if (!(P1->IN &BIT7)) //check if still pushed
             pin_val=1;
@@ -1097,6 +1127,7 @@ uint8_t debounceDOWN(void)   //this section of code is based on lab prep from Zu
     uint8_t pin_val= 0; //var set to low
     if (!(P1->IN &BIT5)) //check button status
         {
+        P1->IFG &= ~BIT5; //clear flags
         delay_ms(5); // pause for 5ms for bounce
         if (!(P1->IN &BIT5)) //check if still pushed
             pin_val=1;
@@ -1110,6 +1141,7 @@ uint8_t debounceUP(void)   //this section of code is based on lab prep from Zuid
     uint8_t pin_val= 0; //var set to low
     if (!(P1->IN &BIT6)) //check button status
         {
+        P1->IFG &= ~BIT6; //clear flags
         delay_ms(5); // pause for 5ms for bounce
         if (!(P1->IN &BIT6)) //check if still pushed
             pin_val=1;
