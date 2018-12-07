@@ -39,9 +39,7 @@ uint8_t debounceUP(); //function prototype for debouncing a switch
 //Functions For LCD
 void systick_start(void); //prototype for initializing timer
 void delay_ms(unsigned); //function prototype for delaying for x ms
-
 void timedisplay(); //prints the time, is passed nADC
-
 void delay_microsec(unsigned microsec);
 void PulseEnablePin(void); //sequences the enable pin
 void pushNibble(uint8_t nibble);  //puts one nibble onto data pins
@@ -49,6 +47,7 @@ void pushByte(uint8_t byte);    //pushes most significant 4 bits to data pins wi
 void write_command( uint8_t command); //writes one bit of command by calling pushByte() with the command parameter
 void dataWrite(uint8_t data);   //will write one bit of data by calling pushByte()
 
+//-----------------------------------------------------------------------------------------------------------
 
 int time_update = 0, alarm_update = 0;
 uint8_t hours, mins, secs;
@@ -84,6 +83,8 @@ void main(void)
     WDT_A->CTL = WDT_A_CTL_PW | WDT_A_CTL_HOLD;     // stop watchdog timer
     systick_start(); //Start up Systick
 
+
+
     LCD_init(); // initializations
     RTC_Init();
     ADC14_init();
@@ -93,9 +94,16 @@ void main(void)
     timer32interrupt_init(); //for the wake up lights
     speakerinit();
     displayinit();
+
+
+
     NVIC_EnableIRQ(RTC_C_IRQn);
+    //NVIC_EnableIRQ(PORT1_IRQn);
 
     __enable_interrupt();
+
+
+
 
     enum states state= STANDBY;
 
@@ -103,8 +111,8 @@ void main(void)
     {
         while(1)
                 {
-                    timedisplay();
-                    switch(state)
+
+                switch(state)
                 {
                 case STANDBY:
                    if(time_update){                            // Time Update Occurred (from interrupt handler)
@@ -113,6 +121,8 @@ void main(void)
                         timedisplay();
                     }
                    TIMER_A0->CCR[1] = 0;
+
+
                    if(debounceSETTIME())
                        {
                        state= SETTIMEH;
@@ -149,6 +159,7 @@ void main(void)
                            TIMER_A0->CCR[1] = 0;
                            alarmdisplay();
                            alarmstatus=1;
+
                        }
                        if(onoffstatus1==2)
                        {
@@ -167,9 +178,11 @@ void main(void)
                            TIMER_A0->CCR[1] = 0;
                            alarmstatus=0;
 
+
                        }
 
                    }
+
 
                     break;
 //-----------------------------------------------------------------------------------------
@@ -218,6 +231,7 @@ void main(void)
                         sound=0;
                         TIMER_A1->CCR[2] = 0;
                         TIMER_A1->CCR[1] = 0;
+                        wakeup=0; //resets lights
 
                     }
 
@@ -229,6 +243,15 @@ void main(void)
                          setalarm(); //sets it back to previous time
                          TIMER_A1->CCR[2] = 0;
                          TIMER_A1->CCR[1] = 0;
+                         write_command(0b10010000); //moves cursor to the third line
+                        dataWrite('O');
+                        dataWrite('N');
+                        dataWrite(' ');
+                        dataWrite(' ');
+                        dataWrite(' ');
+                        dataWrite(' ');
+                        alarmdisplay();
+                        wakeup=0; //resets lights
 
                          }
                  }
@@ -949,15 +972,7 @@ void RTC_C_IRQHandler()
         hours = RTC_C->TIM1 & 0x00FF;                   // Record hours (from bottom 8 bits of TIM1)
         mins = (RTC_C->TIM0 & 0xFF00) >> 8;             // Record minutes (from top 8 bits of TIM0)
         secs = RTC_C->TIM0 & 0x00FF;                    // Record seconds (from bottom 8 bits of TIM0)
-        // For increasing the number of seconds  every PS1 interrupt (to allow time travel)
-//        if(secs != 59){                                 // If not  59 seconds, add 1 (otherwise 59+1 = 60 which doesn't work)
-//            RTC_C->TIM0 = RTC_C->TIM0 + 1;
-//        }
-//        else {
-//            RTC_C->TIM0 = (((RTC_C->TIM0 & 0xFF00) >> 8)+1)<<8;  // Add a minute if at 59 seconds.  This also resets seconds.
-//                                                                 // TODO: What happens if minutes are at 59 minutes as well?
-//            time_update = 1;                                     // Send flag to main program to notify a time update occurred.
-//        }
+
         time_update = 1;
         RTC_C->PS1CTL &= ~BIT0;                         // Reset interrupt flag
     }
@@ -986,17 +1001,13 @@ void PORT1_IRQHandler()
         fasttimestatus=1;
 
     }
-    if (P1->IFG &BIT6)
-    {
-        P1->IFG &= ~BIT6;
-        onoffstatus=1;
-    }
-    if(P1->IFG &BIT5)
-    {
-        P1->IFG &= ~BIT5;
-        snoozestatus=1;
 
-    }
+    P1->IFG &= ~BIT0;
+    P1->IFG &= ~BIT1;
+    P1->IFG &= ~BIT4;
+    P1->IFG &= ~BIT5;
+    P1->IFG &= ~BIT6;
+    P1->IFG &= ~BIT7;
 
 
 }
